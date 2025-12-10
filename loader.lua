@@ -1,4 +1,4 @@
--- loader.lua (auto-update UI via config.json polling)
+-- loader.lua / version corrigée & stabilisée
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -7,32 +7,44 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- === METS ICI TON RAW CONFIG (déjà bon pour toi) ===
+-- ====== CONFIG.JSON URL ======
 local configURL = "https://raw.githubusercontent.com/ZQM-hub00/myscript-loader/refs/heads/main/config.json"
--- ===================================================
 
--- helper UI functions
+-- ====== SECURE HTTP GET ======
+local function SafeGet(url)
+    local ok, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if not ok then
+        warn("⚠️ HTTP ERROR:", result)
+        return nil
+    end
+    return result
+end
+
+-- ====== CORNERS ======
 local function round(gui, radius)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, radius or 12)
     corner.Parent = gui
 end
 
-local function stroke(gui, thickness, color)
+local function stroke(gui, t, col)
     local s = Instance.new("UIStroke")
-    s.Thickness = thickness or 2
-    s.Color = color or Color3.fromRGB(200,200,200)
+    s.Thickness = t or 2
+    s.Color = col or Color3.fromRGB(200,200,200)
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     s.Parent = gui
 end
 
--- draggable
+-- ====== DRAGGABLE ======
 local function makeDraggable(frame)
     frame.Active = true
     local dragging = false
     local dragStart, startPos
+
     frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
@@ -43,27 +55,21 @@ local function makeDraggable(frame)
             end)
         end
     end)
+
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        if dragging then
             local delta = input.Position - dragStart
             frame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
             )
         end
     end)
 end
 
--- copy feedback (no open)
-local function copyToClipboard(link)
-    pcall(function()
-        if setclipboard and typeof(link) == "string" and link ~= "" then
-            setclipboard(link)
-        end
-    end)
-end
-
--- UI creation (we keep references to update later)
+-- ====== UI CREATION ======
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Interface"
 screenGui.ResetOnSpawn = false
@@ -79,8 +85,10 @@ local function makeFrame(parent, titleRich)
     f.Visible = false
     f.Parent = parent
     round(f, 14)
-    stroke(f, 2, Color3.fromRGB(200,200,200))
+    stroke(f, 2)
+
     makeDraggable(f)
+
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, -20, 0, 34)
     title.Position = UDim2.new(0, 10, 0, 10)
@@ -91,6 +99,7 @@ local function makeFrame(parent, titleRich)
     title.TextSize = 20
     title.Font = Enum.Font.GothamBold
     title.Parent = f
+
     return f
 end
 
@@ -104,11 +113,13 @@ local function makeClose(parent, onClose)
     x.TextSize = 16
     x.Font = Enum.Font.GothamBold
     x.AutoButtonColor = false
+
     round(x, 10)
-    stroke(x, 2, Color3.fromRGB(200,200,200))
+    stroke(x, 2)
+
     x.Parent = parent
     x.MouseButton1Click:Connect(function()
-        if typeof(onClose) == "function" then onClose() end
+        if onClose then onClose() end
     end)
 end
 
@@ -122,8 +133,10 @@ local function makeBack(parent, mainFrame, currentFrame)
     arrow.TextSize = 16
     arrow.Font = Enum.Font.GothamBold
     arrow.AutoButtonColor = false
+
     round(arrow, 10)
-    stroke(arrow, 2, Color3.fromRGB(200,200,200))
+    stroke(arrow, 2)
+
     arrow.Parent = parent
     arrow.MouseButton1Click:Connect(function()
         currentFrame.Visible = false
@@ -131,7 +144,6 @@ local function makeBack(parent, mainFrame, currentFrame)
     end)
 end
 
--- create button builder (we will keep references)
 local function makeButton(parent, text, pos, link, isSecondary)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(0, 280, 0, 42)
@@ -142,28 +154,36 @@ local function makeButton(parent, text, pos, link, isSecondary)
     b.TextSize = 16
     b.Font = Enum.Font.GothamBold
     b.AutoButtonColor = false
+
     round(b, 10)
-    stroke(b, 2, Color3.fromRGB(200,200,200))
+    stroke(b, 2)
+
     b:SetAttribute("Link", link or "")
     b.Parent = parent
+
     local normal = b.Size
     local hover = UDim2.new(0, 290, 0, 46)
+
     b.MouseEnter:Connect(function()
         TweenService:Create(b, TweenInfo.new(0.12), {Size = hover}):Play()
     end)
     b.MouseLeave:Connect(function()
         TweenService:Create(b, TweenInfo.new(0.12), {Size = normal}):Play()
     end)
+
     if isSecondary then
         b.MouseButton1Click:Connect(function()
-            local original = b.Text
-            copyToClipboard(b:GetAttribute("Link"))
-            b.Text = "✔ Link Copied 📋"
-            task.delay(1.5, function()
-                if b and b.Parent then b.Text = original end
-            end)
+            if setclipboard then
+                setclipboard(b:GetAttribute("Link"))
+                local old = b.Text
+                b.Text = "✔ Copied 📋"
+                task.delay(1.5, function()
+                    b.Text = old
+                end)
+            end
         end)
     end
+
     return b
 end
 
@@ -178,16 +198,16 @@ local function makeSubtitle(frame, text)
     sub.Font = Enum.Font.GothamSemibold
     sub.TextXAlignment = Enum.TextXAlignment.Center
     sub.Parent = frame
-    stroke(sub, 1, Color3.fromRGB(180,180,180))
+    stroke(sub, 1)
     return sub
 end
 
--- Build UI and keep refs so we can update later
+-- ====== MAIN UI ======
 local mainFrame = makeFrame(screenGui, "Choose an option")
 makeClose(mainFrame, function() mainFrame.Visible = false end)
 
-local keylessBtn = makeButton(mainFrame, "Keyless 🔑", UDim2.new(0.5,-140,0,60), "", false)
-local withKeyBtn = makeButton(mainFrame, "WithKey 🔒", UDim2.new(0.5,-140,0,120), "", false)
+local keylessBtn = makeButton(mainFrame, "Keyless 🔑", UDim2.new(0.5,-140,0,60), "")
+local withKeyBtn = makeButton(mainFrame, "WithKey 🔒", UDim2.new(0.5,-140,0,120), "")
 
 local keylessFrame = makeFrame(screenGui, "Continue with <u>Roblox</u> 🎮")
 makeClose(keylessFrame, function() keylessFrame.Visible = false end)
@@ -201,7 +221,7 @@ makeBack(withKeyFrame, mainFrame, withKeyFrame)
 local withKeyAction = makeButton(withKeyFrame, "WithKey 🔒", UDim2.new(0.5,-140,0,80), "", true)
 local withKeySubtitle = makeSubtitle(withKeyFrame, "Community access with Discord 💬")
 
--- Navigation behavior
+-- ====== NAVIGATION ======
 keylessBtn.MouseButton1Click:Connect(function()
     mainFrame.Visible = false
     keylessFrame.Visible = true
@@ -211,59 +231,29 @@ withKeyBtn.MouseButton1Click:Connect(function()
     withKeyFrame.Visible = true
 end)
 
--- appear animation
+-- ====== ANIMATION ======
 mainFrame.Visible = true
 mainFrame.BackgroundTransparency = 1
 mainFrame.Size = UDim2.new(0,0,0,0)
+
 TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Size = UDim2.new(0,320,0,240)}):Play()
 TweenService:Create(mainFrame, TweenInfo.new(0.5), {BackgroundTransparency = 0}):Play()
 
--- apply config to UI (update links + subtitles)
-local function applyConfig(cfg)
-    if not cfg then return end
-    local r = cfg.roblox_link or cfg.link1 or ""
-    local d = cfg.discord_link or cfg.link2 or ""
-    keylessAction:SetAttribute("Link", r)
-    withKeyAction:SetAttribute("Link", d)
-    keylessSubtitle.Text = cfg.roblox_subtitle or "Fast access with Roblox ⏹️"
-    withKeySubtitle.Text = cfg.discord_subtitle or "Community access with Discord 💬"
-end
-
--- fetch config once and return parsed table
-local function fetchConfig()
-    local ok, raw = pcall(function() return game:HttpGet(configURL, true) end)
-    if not ok or not raw then
-        return nil, raw
+-- ====== LOAD CONFIG ======
+local raw = SafeGet(configURL)
+if raw then
+    local ok, cfg = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if ok and typeof(cfg) == "table" then
+        keylessAction:SetAttribute("Link", cfg.roblox_link or "")
+        withKeyAction:SetAttribute("Link", cfg.discord_link or "")
+        keylessSubtitle.Text = cfg.roblox_subtitle or "Fast access with Roblox ⏹️"
+        withKeySubtitle.Text = cfg.discord_subtitle or "Community access with Discord 💬"
+    else
+        warn("⚠️ JSON ERROR dans config.json")
     end
-    local ok2, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not ok2 then
-        return nil, parsed
-    end
-    return parsed
-end
-
--- initial load
-local cfg, err = fetchConfig()
-if cfg then
-    applyConfig(cfg)
 else
-    warn("Loader: impossible de charger config.json initial:", err)
+    warn("⚠️ Impossible de charger config.json")
 end
 
--- poll every 10s and update if changed
-task.spawn(function()
-    local lastRaw = nil
-    while true do
-        local ok, raw = pcall(function() return game:HttpGet(configURL, true) end)
-        if ok and raw and raw ~= lastRaw then
-            local ok2, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
-            if ok2 and type(parsed) == "table" then
-                applyConfig(parsed)
-                lastRaw = raw
-            end
-        end
-        task.wait(10)
-    end
-end)
-
--- end of loader.lua
